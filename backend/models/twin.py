@@ -17,9 +17,6 @@ class DigitalTwin:
         self.history = []
     
     def simulate(self, scenario='normal'):
-        """Simulate digital twin state based on scenario"""
-        
-        # Base state with random variations
         state = {
             'status': 'operational',
             'timestamp': datetime.now().isoformat(),
@@ -31,8 +28,6 @@ class DigitalTwin:
             'disk_io': round(random.uniform(10, 50), 1),
             'network_latency': round(random.uniform(1, 20), 1)
         }
-        
-        # Modify based on scenario
         if scenario == 'attack':
             state['threat_level'] = 'CRITICAL'
             state['network_health'] = round(random.uniform(0.3, 0.6), 3)
@@ -40,35 +35,28 @@ class DigitalTwin:
             state['network_latency'] = round(random.uniform(50, 200), 1)
             state['active_connections'] = random.randint(200, 500)
             state['status'] = 'compromised'
-        
         elif scenario == 'recovery':
             state['threat_level'] = 'LOW'
             state['network_health'] = round(random.uniform(0.9, 1.0), 3)
             state['cpu_usage'] = round(random.uniform(10, 30), 1)
             state['active_connections'] = random.randint(30, 80)
             state['status'] = 'recovering'
-        
         elif scenario == 'maintenance':
             state['cpu_usage'] = round(random.uniform(10, 25), 1)
             state['active_connections'] = random.randint(10, 40)
             state['threat_level'] = 'LOW'
             state['status'] = 'maintenance'
-        
         self.state = state
         self.history.append(state)
-        print(f"✅ Digital Twin simulated scenario: {scenario}")
         return state
     
     def get_state(self):
-        """Get current twin state"""
         return self.state
     
     def update_state(self, updates):
-        """Update twin state"""
         self.state.update(updates)
         self.state['last_update'] = datetime.now().isoformat()
         return self.state
     
     def get_history(self, limit=10):
-        """Get history of states"""
         return self.history[-limit:]

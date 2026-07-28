@@ -9,6 +9,9 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import from models folder
+from models import ClassifierModel, AutoencoderModel, SHAPExplainer, DigitalTwin
+
 app = Flask(__name__)
 CORS(app, origins=["http://127.0.0.1:5500", "http://localhost:5500"], 
      supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
@@ -25,7 +28,16 @@ threat_store = {}
 pending_approvals = {}
 auto_remediation_log = []
 admin_action_log = []
-threat_counter = 0
+
+# ---------- MODELS REFERENCE ----------
+classifier = None
+autoencoder = None
+shap_explainer = None
+digital_twin = None
+scaler = None
+X_train = None
+y_train = None
+feature_names = []
 
 # ---------- SAMPLE DATA ----------
 def get_sample_data():
@@ -46,72 +58,89 @@ def get_sample_data():
     return df
 
 # ---------- LOAD DATA ----------
-try:
-    df = pd.read_csv('../data.csv')
-    print("✅ Loaded: data.csv")
-except:
+def load_data():
+    global X_train, y_train, feature_names
+    
     try:
-        df = pd.read_csv('data.csv')
-        print("✅ Loaded: data.csv")
+        df = pd.read_csv('../data.csv')
+        print("✅ Loaded: data.csv from parent folder")
     except:
-        df = get_sample_data()
-        print("⚠️ Using sample data")
+        try:
+            df = pd.read_csv('data.csv')
+            print("✅ Loaded: data.csv from backend folder")
+        except:
+            df = get_sample_data()
+            print("⚠️ Using sample data (no data.csv found)")
 
-# Clean data - keep only numeric columns
-for col in df.columns:
-    try:
-        df[col] = pd.to_numeric(df[col])
-    except:
-        df = df.drop(columns=[col])
+    # Clean data - keep only numeric columns
+    for col in df.columns:
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except:
+            df = df.drop(columns=[col])
 
-# Label column
-label_col = None
-for col in df.columns:
-    if col.lower() in ['label', 'target', 'class']:
-        label_col = col
-        break
+    # Label column
+    label_col = None
+    for col in df.columns:
+        if col.lower() in ['label', 'target', 'class']:
+            label_col = col
+            break
 
-if label_col is None:
-    df['label'] = np.random.choice([0, 1], len(df))
-    label_col = 'label'
+    if label_col is None:
+        df['label'] = np.random.choice([0, 1], len(df))
+        label_col = 'label'
 
-X = df.drop(columns=[label_col])
-y = df[label_col]
+    X_train = df.drop(columns=[label_col])
+    y_train = df[label_col]
+    feature_names = X_train.columns.tolist()
 
-print(f"📊 Data: {len(df)} rows, {len(X.columns)} features")
+    print(f"📊 Data: {len(df)} rows, {len(X_train.columns)} features")
+    return df
 
-# ---------- TRAIN MODEL ----------
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+# ---------- INITIALIZE MODELS ----------
+def init_models():
+    global classifier, autoencoder, shap_explainer, digital_twin, scaler
+    
+    print("🔄 Initializing models...")
+    
+    # 1. Classifier
+    print("  - Training Classifier...")
+    classifier = ClassifierModel()
+    classifier.train(X_train, y_train)
+    scaler = classifier.scaler  # Use scaler from classifier
+    
+    # 2. Autoencoder
+    print("  - Training Autoencoder...")
+    autoencoder = AutoencoderModel(n_components=min(4, X_train.shape[1]))
+    autoencoder.train(X_train)
+    
+    # 3. SHAP Explainer
+    print("  - Initializing SHAP Explainer...")
+    shap_explainer = SHAPExplainer(classifier.model)
+    shap_explainer.fit(X_train)
+    
+    # 4. Digital Twin
+    print("  - Initializing Digital Twin...")
+    digital_twin = DigitalTwin()
+    
+    print("✅ All models initialized successfully!")
 
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-model = RandomForestClassifier(n_estimators=50, random_state=42)
-model.fit(X_scaled, y)
-
-acc = accuracy_score(y, model.predict(X_scaled)) * 100
-print(f"✅ Model trained! Accuracy: {acc:.2f}%")
+# ---------- LOAD DATA AND INITIALIZE ----------
+load_data()
+init_models()
 
 # ---------- THREAT ANALYSIS ----------
 def analyze_threat(features, mode='normal'):
-    """
-    Analyze threat with configurable simulation mode.
-    mode: 'normal', 'low_attack', 'medium_attack', 'severe_attack'
-    """
     try:
         features_array = np.array(features).reshape(1, -1)
-        if features_array.shape[1] != len(X.columns):
-            features_array = np.random.randn(1, len(X.columns))
+        if features_array.shape[1] != len(feature_names):
+            features_array = np.random.randn(1, len(feature_names))
         
-        X_scaled_input = scaler.transform(features_array)
-        pred = model.predict(X_scaled_input)[0]
-        prob = model.predict_proba(X_scaled_input)[0]
+        pred = classifier.predict(features_array)[0]
+        prob = classifier.predict_proba(features_array)[0]
         confidence = float(max(prob))
-        
         attack_prob = float(prob[1]) if len(prob) > 1 else 0.0
         
-        # Override based on simulation mode
         if mode == 'low_attack':
             attack_prob = 0.20
         elif mode == 'medium_attack':
@@ -119,24 +148,14 @@ def analyze_threat(features, mode='normal'):
         elif mode == 'severe_attack':
             attack_prob = 0.90
         
-        # Determine severity
         if attack_prob < 0.40:
-            severity = 'LOW'
-            auto_fix = True
-            alert = False
+            severity = 'LOW'; auto_fix = True; alert = False
         elif 0.40 <= attack_prob <= 0.75:
-            severity = 'MEDIUM'
-            auto_fix = True
-            alert = False
+            severity = 'MEDIUM'; auto_fix = True; alert = False
         else:
-            severity = 'HIGH'
-            auto_fix = False
-            alert = True
-        
+            severity = 'HIGH'; auto_fix = False; alert = True
         if mode == 'severe_attack' and attack_prob > 0.85:
-            severity = 'CRITICAL'
-            auto_fix = False
-            alert = True
+            severity = 'CRITICAL'; auto_fix = False; alert = True
         
         return {
             'prediction': int(pred),
@@ -149,19 +168,12 @@ def analyze_threat(features, mode='normal'):
             'mode': mode
         }
     except Exception as e:
-        return {
-            'error': str(e),
-            'severity': 'UNKNOWN',
-            'auto_fix': False,
-            'alert': True
-        }
+        return {'error': str(e), 'severity': 'UNKNOWN', 'auto_fix': False, 'alert': True}
 
-# ---------- SOAR: PROCESS THREAT ----------
+# ---------- SOAR PROCESS ----------
 def process_threat(threat_data):
-    """Process threat with tiered response policy"""
     severity = threat_data.get('severity', 'LOW')
     threat_id = f"TH-{int(time.time())}-{random.randint(100,999)}"
-    
     if severity in ['LOW', 'MEDIUM']:
         action_taken = f"Autonomously blocked source {threat_data.get('source', 'unknown')} and updated firewall rules."
         status = "RESOLVED_AUTOMATICALLY"
@@ -173,7 +185,7 @@ def process_threat(threat_data):
             'action': action_taken,
             'status': status
         })
-    else:  # HIGH or CRITICAL
+    else:
         action_taken = "Awaiting Admin Approval for system isolation."
         status = "PENDING_HUMAN_APPROVAL"
         requires_human = True
@@ -184,7 +196,6 @@ def process_threat(threat_data):
             'threat_data': threat_data,
             'status': status
         }
-    
     threat_store[threat_id] = {
         'threat_id': threat_id,
         'severity': severity,
@@ -195,14 +206,7 @@ def process_threat(threat_data):
         'source': threat_data.get('source', 'unknown'),
         'details': threat_data.get('details', {})
     }
-    
-    return {
-        "threat_id": threat_id,
-        "severity": severity,
-        "status": status,
-        "action_taken": action_taken,
-        "requires_human": requires_human
-    }
+    return {"threat_id": threat_id, "severity": severity, "status": status, "action_taken": action_taken, "requires_human": requires_human}
 
 # ---------- MONITORING LOOP ----------
 def monitor_loop():
@@ -212,25 +216,20 @@ def monitor_loop():
     while is_monitoring:
         try:
             scan_count += 1
-            random_features = np.random.randn(len(X.columns))
+            random_features = np.random.randn(len(feature_names))
             threat = analyze_threat(random_features)
             threat['features'] = random_features.tolist()
             threat['scan_number'] = scan_count
             threat['source'] = f"192.168.1.{random.randint(1, 255)}"
-            
             processed = process_threat({
                 'severity': threat['severity'],
                 'source': threat['source'],
-                'details': {
-                    'confidence': threat['confidence'],
-                    'prediction': threat['prediction']
-                }
+                'details': {'confidence': threat['confidence'], 'prediction': threat['prediction']}
             })
             threat['processed'] = processed
             threat_history.append(threat)
             if len(threat_history) > 100:
                 threat_history.pop(0)
-            
             if threat['severity'] in ['HIGH', 'CRITICAL']:
                 alert_msg = f"🚨 {threat['severity']} THREAT DETECTED! Admin approval required."
                 alert_history.append({
@@ -244,7 +243,6 @@ def monitor_loop():
                 print(f"🚨 {threat['severity']}: {threat}")
             elif threat['severity'] in ['LOW', 'MEDIUM']:
                 print(f"🔧 Auto-remediated: {threat['severity']} threat")
-            
             if len(alert_history) > 50:
                 alert_history.pop(0)
             time.sleep(5)
@@ -253,18 +251,11 @@ def monitor_loop():
             time.sleep(2)
 
 # ---------- API ENDPOINTS ----------
-
 @app.route('/api/health', methods=['GET', 'OPTIONS'])
 def health_check():
     if request.method == 'OPTIONS':
         return '', 200
-    return jsonify({
-        'status': 'online',
-        'timestamp': datetime.now().isoformat(),
-        'version': '2.0.0',
-        'models_loaded': True,
-        'monitoring': is_monitoring
-    })
+    return jsonify({'status': 'online', 'timestamp': datetime.now().isoformat(), 'version': '2.0.0', 'models_loaded': True, 'monitoring': is_monitoring})
 
 @app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
@@ -272,33 +263,29 @@ def login():
         return '', 200
     data = request.json
     if data.get('email') and data.get('password'):
-        return jsonify({
-            'success': True,
-            'message': 'Login successful',
-            'user': data.get('email'),
-            'token': 'token-' + str(random.randint(1000, 9999))
-        })
+        return jsonify({'success': True, 'message': 'Login successful', 'user': data.get('email'), 'token': 'token-' + str(random.randint(1000, 9999))})
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/metrics', methods=['GET', 'OPTIONS'])
 def get_metrics():
     if request.method == 'OPTIONS':
         return '', 200
-    y_pred = model.predict(X_scaled)
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    X_scaled = scaler.transform(X_train)
+    y_pred = classifier.predict(X_train)
     return jsonify({
         'success': True,
         'metrics': {
-            'accuracy': round(accuracy_score(y, y_pred) * 100, 2),
-            'precision': round(precision_score(y, y_pred, average='weighted') * 100, 2),
-            'recall': round(recall_score(y, y_pred, average='weighted') * 100, 2),
-            'f1_score': round(f1_score(y, y_pred, average='weighted') * 100, 2),
-            'samples_trained': len(X),
-            'features': len(X.columns)
+            'accuracy': round(accuracy_score(y_train, y_pred) * 100, 2),
+            'precision': round(precision_score(y_train, y_pred, average='weighted') * 100, 2),
+            'recall': round(recall_score(y_train, y_pred, average='weighted') * 100, 2),
+            'f1_score': round(f1_score(y_train, y_pred, average='weighted') * 100, 2),
+            'samples_trained': len(X_train),
+            'features': len(feature_names)
         }
     })
 
 # ---------- SOAR ENDPOINTS ----------
-
 @app.route('/api/threats', methods=['POST', 'OPTIONS'])
 def handle_threat():
     if request.method == 'OPTIONS':
@@ -306,22 +293,13 @@ def handle_threat():
     try:
         data = request.json or {}
         if not data.get('severity'):
-            features = np.random.randn(len(X.columns)).tolist()
+            features = np.random.randn(len(feature_names)).tolist()
             analysis = analyze_threat(features)
             data['severity'] = analysis['severity']
             data['source'] = f"192.168.1.{random.randint(1, 255)}"
-            data['details'] = {
-                'confidence': analysis['confidence'],
-                'prediction': analysis['prediction']
-            }
-        
+            data['details'] = {'confidence': analysis['confidence'], 'prediction': analysis['prediction']}
         result = process_threat(data)
-        return jsonify({
-            'success': True,
-            'threat': result,
-            'pending_approvals': len(pending_approvals),
-            'auto_remediated': len(auto_remediation_log)
-        })
+        return jsonify({'success': True, 'threat': result, 'pending_approvals': len(pending_approvals), 'auto_remediated': len(auto_remediation_log)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -334,11 +312,7 @@ def remediate_threat():
         threat_id = data.get('threat_id')
         action = data.get('action', 'approve')
         if not threat_id or threat_id not in pending_approvals:
-            return jsonify({
-                'success': False,
-                'error': 'Threat not found or already resolved'
-            }), 404
-        
+            return jsonify({'success': False, 'error': 'Threat not found or already resolved'}), 404
         pending = pending_approvals[threat_id]
         if action == 'approve':
             actions = [
@@ -353,14 +327,11 @@ def remediate_threat():
         else:
             action_taken = "Rejected by admin - threat ignored"
             status = "REJECTED_BY_ADMIN"
-        
         threat_store[threat_id]['status'] = status
         threat_store[threat_id]['action_taken'] = action_taken
         threat_store[threat_id]['remediated_at'] = datetime.now().isoformat()
         threat_store[threat_id]['admin_action'] = action
-        
         del pending_approvals[threat_id]
-        
         admin_action_log.append({
             'threat_id': threat_id,
             'action': action,
@@ -368,14 +339,7 @@ def remediate_threat():
             'timestamp': datetime.now().isoformat(),
             'admin': 'admin@cyberimmune.ai'
         })
-        
-        return jsonify({
-            'success': True,
-            'threat_id': threat_id,
-            'status': status,
-            'action_taken': action_taken,
-            'message': f'Threat {threat_id} {status}'
-        })
+        return jsonify({'success': True, 'threat_id': threat_id, 'status': status, 'action_taken': action_taken, 'message': f'Threat {threat_id} {status}'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -383,11 +347,7 @@ def remediate_threat():
 def get_pending_threats():
     if request.method == 'OPTIONS':
         return '', 200
-    return jsonify({
-        'success': True,
-        'pending': list(pending_approvals.values()),
-        'count': len(pending_approvals)
-    })
+    return jsonify({'success': True, 'pending': list(pending_approvals.values()), 'count': len(pending_approvals)})
 
 @app.route('/api/threat-history', methods=['GET', 'OPTIONS'])
 def get_threat_history():
@@ -396,33 +356,19 @@ def get_threat_history():
     limit = request.args.get('limit', 50, type=int)
     threats = list(threat_store.values())
     threats.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-    return jsonify({
-        'success': True,
-        'threats': threats[:limit],
-        'total': len(threats),
-        'pending': len(pending_approvals),
-        'auto_remediated': len(auto_remediation_log)
-    })
+    return jsonify({'success': True, 'threats': threats[:limit], 'total': len(threats), 'pending': len(pending_approvals), 'auto_remediated': len(auto_remediation_log)})
 
 @app.route('/api/auto-remediation/log', methods=['GET', 'OPTIONS'])
 def get_auto_remediation_log():
     if request.method == 'OPTIONS':
         return '', 200
-    return jsonify({
-        'success': True,
-        'logs': auto_remediation_log[-20:],
-        'total': len(auto_remediation_log)
-    })
+    return jsonify({'success': True, 'logs': auto_remediation_log[-20:], 'total': len(auto_remediation_log)})
 
 @app.route('/api/admin-actions/log', methods=['GET', 'OPTIONS'])
 def get_admin_actions_log():
     if request.method == 'OPTIONS':
         return '', 200
-    return jsonify({
-        'success': True,
-        'logs': admin_action_log[-20:],
-        'total': len(admin_action_log)
-    })
+    return jsonify({'success': True, 'logs': admin_action_log[-20:], 'total': len(admin_action_log)})
 
 # ---------- MONITORING CONTROL ----------
 @app.route('/api/monitoring/start', methods=['POST', 'OPTIONS'])
@@ -463,19 +409,16 @@ def threat_detection():
         return '', 200
     try:
         data = request.json or {}
-        features = data.get('features', [0]*len(X.columns))
-        if not features or len(features) != len(X.columns):
-            features = np.random.randn(len(X.columns)).tolist()
+        features = data.get('features', [0]*len(feature_names))
+        if not features or len(features) != len(feature_names):
+            features = np.random.randn(len(feature_names)).tolist()
         mode = data.get('mode', 'normal')
         result = analyze_threat(features, mode)
-        
-        # Generate confusion matrix
         tn = random.randint(400, 500)
         fp = random.randint(5, 30)
         fn = random.randint(3, 20)
         tp = random.randint(20, 50)
         total = tn + fp + fn + tp
-        
         return jsonify({
             'success': True,
             'prediction': result['prediction'],
@@ -500,12 +443,7 @@ def threat_detection():
 def federated_learning():
     if request.method == 'OPTIONS':
         return '', 200
-    return jsonify({
-        'success': True,
-        'round': random.randint(1, 15),
-        'global_accuracy': round(random.uniform(0.82, 0.97), 3),
-        'clients_aggregated': random.randint(3, 10)
-    })
+    return jsonify({'success': True, 'round': random.randint(1, 15), 'global_accuracy': round(random.uniform(0.82, 0.97), 3), 'clients_aggregated': random.randint(3, 10)})
 
 @app.route('/api/multi', methods=['POST', 'OPTIONS'])
 def multi_class():
@@ -513,12 +451,7 @@ def multi_class():
         return '', 200
     classes = ['Benign', 'Malware', 'Ransomware', 'Phishing', 'APT']
     probs = np.random.dirichlet(np.ones(5))
-    return jsonify({
-        'success': True,
-        'predictions': {classes[i]: float(probs[i]) for i in range(5)},
-        'top_class': classes[np.argmax(probs)],
-        'confidence': float(max(probs))
-    })
+    return jsonify({'success': True, 'predictions': {classes[i]: float(probs[i]) for i in range(5)}, 'top_class': classes[np.argmax(probs)], 'confidence': float(max(probs))})
 
 @app.route('/api/autoencoder', methods=['POST', 'OPTIONS'])
 def autoencoder_detection():
@@ -526,62 +459,40 @@ def autoencoder_detection():
         return '', 200
     is_anomaly = random.choice([True, False])
     error = round(random.uniform(0.1, 1.0), 4)
-    return jsonify({
-        'success': True,
-        'reconstruction_error': error,
-        'is_anomaly': is_anomaly,
-        'status': 'ANOMALY_DETECTED' if is_anomaly else 'NORMAL',
-        'anomaly_score': round(random.uniform(0, 1), 2)
-    })
+    return jsonify({'success': True, 'reconstruction_error': error, 'is_anomaly': is_anomaly, 'status': 'ANOMALY_DETECTED' if is_anomaly else 'NORMAL', 'anomaly_score': round(random.uniform(0, 1), 2)})
 
 @app.route('/api/shap', methods=['POST', 'OPTIONS'])
 def shap_explain():
     if request.method == 'OPTIONS':
         return '', 200
-    features = list(X.columns)[:8]
-    shap_values = [round(random.uniform(-1, 1), 4) for _ in range(len(features))]
-    sorted_pairs = sorted(zip(features, shap_values), key=lambda x: abs(x[1]), reverse=True)
-    features = [p[0] for p in sorted_pairs]
-    shap_values = [p[1] for p in sorted_pairs]
-    return jsonify({
-        'success': True,
-        'features': features,
-        'shap_values': shap_values,
-        'base_value': round(random.uniform(0.3, 0.7), 4)
-    })
+    if shap_explainer:
+        features = feature_names[:8]
+        shap_values = [round(random.uniform(-1, 1), 4) for _ in range(len(features))]
+        sorted_pairs = sorted(zip(features, shap_values), key=lambda x: abs(x[1]), reverse=True)
+        features = [p[0] for p in sorted_pairs]
+        shap_values = [p[1] for p in sorted_pairs]
+        return jsonify({'success': True, 'features': features, 'shap_values': shap_values, 'base_value': round(random.uniform(0.3, 0.7), 4)})
+    else:
+        return jsonify({'success': False, 'error': 'SHAP model not initialized'}), 503
 
 @app.route('/api/twin', methods=['POST', 'OPTIONS'])
-def digital_twin():
+def digital_twin_endpoint():
     if request.method == 'OPTIONS':
         return '', 200
-    threat_level = random.choice(['LOW', 'MEDIUM', 'HIGH'])
-    return jsonify({
-        'success': True,
-        'twin_state': {
-            'status': 'operational',
-            'threat_level': threat_level,
-            'cpu_usage': round(random.uniform(10, 85), 1),
-            'network_health': round(random.uniform(0.65, 1.0), 2)
-        }
-    })
+    scenario = request.json.get('scenario', 'normal')
+    if digital_twin:
+        state = digital_twin.simulate(scenario)
+        return jsonify({'success': True, 'twin_state': state, 'scenario': scenario})
+    else:
+        return jsonify({'success': False, 'error': 'Digital Twin not initialized'}), 503
 
 @app.route('/api/response', methods=['POST', 'OPTIONS'])
 def response_agent():
     if request.method == 'OPTIONS':
         return '', 200
     severity = request.json.get('severity', 'medium')
-    actions = {
-        'critical': ['Isolate nodes', 'Block IPs', 'Notify SOC'],
-        'high': ['Quarantine', 'Update firewall', 'Alert team'],
-        'medium': ['Analyze', 'Monitor', 'Report'],
-        'low': ['Log', 'Update intel']
-    }
-    return jsonify({
-        'success': True,
-        'response_id': 'RESP-' + str(random.randint(1000, 9999)),
-        'actions': actions.get(severity, actions['medium']),
-        'status': 'executing'
-    })
+    actions = {'critical': ['Isolate nodes', 'Block IPs', 'Notify SOC'], 'high': ['Quarantine', 'Update firewall', 'Alert team'], 'medium': ['Analyze', 'Monitor', 'Report'], 'low': ['Log', 'Update intel']}
+    return jsonify({'success': True, 'response_id': 'RESP-' + str(random.randint(1000, 9999)), 'actions': actions.get(severity, actions['medium']), 'status': 'executing'})
 
 @app.route('/api/trust-ledger', methods=['GET', 'OPTIONS'])
 def trust_ledger():
@@ -590,12 +501,7 @@ def trust_ledger():
     events = ['Login', 'Detection', 'Training', 'Response', 'Analysis']
     entries = []
     for i in range(5):
-        entries.append({
-            'id': f'ENT-{i+1}',
-            'event': random.choice(events),
-            'status': random.choice(['verified', 'pending']),
-            'hash': '0x' + ''.join([str(random.randint(0, 9)) for _ in range(16)])
-        })
+        entries.append({'id': f'ENT-{i+1}', 'event': random.choice(events), 'status': random.choice(['verified', 'pending']), 'hash': '0x' + ''.join([str(random.randint(0,9)) for _ in range(16)])})
     return jsonify({'success': True, 'entries': entries})
 
 @app.route('/api/run-all-models', methods=['POST', 'OPTIONS'])
@@ -607,27 +513,20 @@ def run_all():
         'success': True,
         'timestamp': str(datetime.now()),
         'models': {
-            'threat_detection': {
-                'prediction': random.choice([0, 1]),
-                'threat_level': random.choice(threat_levels)
-            },
-            'autoencoder': {'is_anomaly': random.choice([True, False])},
-            'multi_class': {'top_class': random.choice(['Benign', 'Malware', 'Phishing'])},
-            'digital_twin': {'cpu_usage': round(random.uniform(10, 85), 1)}
+            'threat_detection': {'prediction': random.choice([0,1]), 'threat_level': random.choice(threat_levels)},
+            'autoencoder': {'is_anomaly': random.choice([True,False])},
+            'multi_class': {'top_class': random.choice(['Benign','Malware','Phishing'])},
+            'digital_twin': {'cpu_usage': round(random.uniform(10,85),1)}
         }
     })
 
 if __name__ == '__main__':
     print("\n" + "="*50)
-    print("🚀 ACIS-Core Backend Server (SOAR Enabled)")
+    print("🚀 ACIS-Core Backend Server (Modular Models)")
     print("="*50)
-    print(f"📊 Data loaded: {len(df)} rows, {len(X.columns)} features")
-    print(f"✅ Model accuracy: {acc:.2f}%")
+    print(f"📊 Data loaded: {len(X_train)} rows, {len(feature_names)} features")
+    print("✅ All models initialized successfully!")
     print("🌐 Server running on http://127.0.0.1:5001")
-    print("📡 SOAR Endpoints:")
-    print("   POST /api/threats - Process threat (auto/human)")
-    print("   POST /api/remediate - Approve/Reject threat")
-    print("   GET  /api/pending-threats - View pending approvals")
-    print("   GET  /api/threat-history - View all threats")
+    print("📡 SOAR Endpoints available")
     print("="*50 + "\n")
     app.run(debug=True, port=5001)
