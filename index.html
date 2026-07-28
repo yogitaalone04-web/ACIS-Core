@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<<<<<<< HEAD
 <html>
 <head>
     <meta charset="UTF-8">
@@ -230,11 +231,194 @@
                         <i class="fas fa-spinner fa-spin" style="font-size:2rem; margin-bottom:10px;"></i><br>
                         Loading ledger entries...
                     </div>
+=======
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous AI-Powered Cyber Immune System</title>
+    <!-- Modern Typography & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="dark-theme">
+    <div class="app-layout">
+        <!-- Spacious Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-logo">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div class="brand-info">
+                    <h2>CyberImmune</h2>
+                    <span class="version-tag">v2.4 Enterprise AI</span>
+                </div>
+            </div>
+
+            <nav class="nav-links">
+                <a href="#overview" class="nav-link active" data-tab="overview">
+                    <i class="fa-solid fa-grid-2"></i>
+                    <span>Overview</span>
+                </a>
+                <a href="#threat-detection" class="nav-link" data-tab="threat-detection">
+                    <i class="fa-solid fa-radar"></i>
+                    <span>Threat Detection</span>
+                </a>
+                <a href="#federated-learning" class="nav-link" data-tab="federated-learning">
+                    <i class="fa-solid fa-diagram-project"></i>
+                    <span>Federated Learning</span>
+                </a>
+                <a href="#digital-twin" class="nav-link" data-tab="digital-twin">
+                    <i class="fa-solid fa-cubes"></i>
+                    <span>Digital Twin</span>
+                </a>
+                <a href="#trust-ledger" class="nav-link" data-tab="trust-ledger">
+                    <i class="fa-solid fa-link"></i>
+                    <span>Trust Ledger</span>
+                </a>
+                <a href="#shap" class="nav-link" data-tab="shap">
+                    <i class="fa-solid fa-brain"></i>
+                    <span>SHAP Explainability</span>
+                </a>
+                <a href="#response-agent" class="nav-link" data-tab="response-agent">
+                    <i class="fa-solid fa-user-shield"></i>
+                    <span>Response Agent</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-user">
+                <div class="user-avatar">
+                    <i class="fa-solid fa-user-check"></i>
+                </div>
+                <div class="user-details">
+                    <p class="user-name">SecOps Commander</p>
+                    <p class="user-role">System Admin</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace Canvas -->
+        <main class="workspace">
+            <!-- Top Banner Header -->
+            <header class="top-banner-card">
+                <div class="banner-title">
+                    <h1>Autonomous AI-Powered Cyber Immune System</h1>
+                </div>
+                <div class="online-status-badge">
+                    <span class="pulse-dot"></span>
+                    <span class="status-label">System Online</span>
+                </div>
+            </header>
+
+            <!-- Section 1: System Controls Card (Exact match to reference photo layout) -->
+            <section class="section-card">
+                <div class="section-card-header">
+                    <h2>System Controls</h2>
+                    <p class="section-subtitle">Initiate autonomous defense protocols and threat analysis.</p>
+                </div>
+
+                <div class="controls-button-grid">
+                    <button class="action-btn btn-blue" onclick="triggerAction('threat-detection')">
+                        Run Threat Detection
+                    </button>
+                    <button class="action-btn btn-purple" onclick="triggerAction('federated-learning')">
+                        Federated Learning
+                    </button>
+                    <button class="action-btn btn-blue" onclick="triggerAction('classifier')">
+                        Multi-Class Classifier
+                    </button>
+
+                    <button class="action-btn btn-purple" onclick="triggerAction('autoencoder')">
+                        Autoencoder Detection
+                    </button>
+                    <button class="action-btn btn-blue" onclick="triggerAction('shap')">
+                        SHAP Explainability
+                    </button>
+                    <button class="action-btn btn-purple" onclick="triggerAction('digital-twin')">
+                        Digital Twin Sim
+                    </button>
+
+                    <button class="action-btn btn-blue" onclick="triggerAction('trust-ledger')">
+                        Trust Ledger
+                    </button>
+                    <button class="action-btn btn-purple" onclick="triggerAction('response-agent')">
+                        Response Agent
+                    </button>
+                </div>
+            </section>
+
+            <!-- Section 2: Real-time Metrics Card (Spacious clean layout) -->
+            <section class="section-card">
+                <div class="section-card-header">
+                    <h2>Real-time Metrics</h2>
+                </div>
+
+                <div class="metrics-spacious-grid">
+                    <div class="metric-container">
+                        <span class="metric-heading">ACCURACY</span>
+                        <div class="metric-value-large" id="val-accuracy">99.4%</div>
+                    </div>
+
+                    <div class="metric-container">
+                        <span class="metric-heading">PRECISION</span>
+                        <div class="metric-value-large" id="val-precision">98.8%</div>
+                    </div>
+
+                    <div class="metric-container">
+                        <span class="metric-heading">RECALL</span>
+                        <div class="metric-value-large" id="val-recall">99.1%</div>
+                    </div>
+
+                    <div class="metric-container">
+                        <span class="metric-heading">LATENCY</span>
+                        <div class="metric-value-large" id="val-latency">4.2 ms</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3: Telemetry & Live Log Stream -->
+            <div class="dual-section-grid">
+                <section class="section-card chart-section">
+                    <div class="section-card-header flex-header">
+                        <h2>Neural Anomaly Telemetry</h2>
+                        <span class="live-tag">LIVE STREAM</span>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="telemetryChart"></canvas>
+                    </div>
+                </section>
+
+                <section class="section-card log-section">
+                    <div class="section-card-header flex-header">
+                        <h2>Immune Audit Stream</h2>
+                        <button class="btn-clear" onclick="clearLogs()">Clear</button>
+                    </div>
+                    <div class="spacious-logs-container" id="logsStream">
+                        <div class="log-item info">
+                            <span class="log-time">[12:30:01]</span> <span class="log-tag">SYSTEM</span> Neural Immune Engine initialized successfully.
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Dynamic Modal -->
+            <div class="modal-backdrop" id="modalOverlay">
+                <div class="modal-window">
+                    <div class="modal-top">
+                        <h3 id="modalTitle">Module Output</h3>
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                    </div>
+                    <div class="modal-content-area" id="modalBody"></div>
+>>>>>>> origin/main
                 </div>
             </div>
         </main>
     </div>
 
+<<<<<<< HEAD
     <script>
         const API = 'http://127.0.0.1:5001/api';
         let anomalyChart = null;
@@ -756,3 +940,10 @@
     </script>
 </body>
 </html>
+=======
+    <script src="js/api.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+>>>>>>> origin/main
