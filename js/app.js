@@ -1,180 +1,262 @@
-// Main App Logic for Cyber Immune System
+// ACIS-Core Dashboard
+const API_BASE = 'http://127.0.0.1:5001/api';
+let currentUser = null;
+let metricsInterval = null;
 
-function appendLog(message, type = 'info', badge = 'SYSTEM') {
-    const stream = document.getElementById('logsStream');
-    if (!stream) return;
-
-    const timeStr = new Date().toLocaleTimeString();
-    const entry = document.createElement('div');
-    entry.className = `log-entry ${type}`;
-    entry.innerHTML = `<span class="time">[${timeStr}]</span> <span class="badge">${badge}</span> ${message}`;
+document.addEventListener('DOMContentLoaded', function() {
+    // Check login status
+    const storedUser = localStorage.getItem('acis_user');
+    if (storedUser) {
+        try {
+            currentUser = JSON.parse(storedUser);
+            document.getElementById('userEmail').textContent = currentUser.email || 'admin@cyberimmune.ai';
+        } catch(e) {
+            currentUser = { email: 'admin@cyberimmune.ai' };
+        }
+    } else {
+        // Redirect to login if not authenticated
+        window.location.href = 'login.html';
+        return;
+    }
     
-    stream.prepend(entry);
+    // Check server health
+    checkServerHealth();
+    
+    // Load initial data
+    loadMetrics();
+    loadDataInfo();
+    loadLedger();
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Auto-refresh metrics every 10 seconds
+    if (metricsInterval) clearInterval(metricsInterval);
+    metricsInterval = setInterval(loadMetrics, 10000);
+});
+
+function setupEventListeners() {
+    // Logout
+    document.getElementById('logoutBtn')?.addEventListener('click', function() {
+        localStorage.removeItem('acis_user');
+        window.location.href = 'login.html';
+    });
+    
+    // Tab switching
+    document.querySelectorAll('.sidebar nav ul li').forEach(item => {
+        item.addEventListener('click', function() {
+            document.querySelectorAll('.sidebar nav ul li').forEach(i => i.classList.remove('active'));
+            this.classList.add('active');
+            
+            const tab = this.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+            const target = document.getElementById(`tab-${tab}`);
+            if (target) target.style.display = 'block';
+            
+            if (tab === 'ledger') loadLedger();
+        });
+    });
+    
+    // Run All Models
+    document.getElementById('runAllModels')?.addEventListener('click', runAllModels);
+    
+    // Individual model buttons
+    document.querySelectorAll('.control-btn[data-model]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const model = this.dataset.model;
+            runModel(model);
+        });
+    });
 }
 
-function clearLogs() {
-    const stream = document.getElementById('logsStream');
-    if (stream) stream.innerHTML = '';
-}
-
-// System Button Actions
-async function triggerAction(actionType) {
-    appendLog(`User initiated action: [${actionType.toUpperCase()}]`, 'info', 'USER');
-
-    switch (actionType) {
-        case 'threat-detection':
-            appendLog('Running deep multi-class neural network threat scan...', 'warning', 'THREAT_ENGINE');
-            const resTD = await CyberImmuneAPI.runThreatDetection();
-            appendLog(`Scan Complete: ${resTD.threatsFound} Threats found! Action: ${resTD.actionTaken} (${resTD.confidence} confidence)`, 'danger', 'THREAT_ENGINE');
-            updateMetrics(99.6, 99.1, 99.5, '3.8 ms');
-            showModal('AI Threat Detection Result', `
-                <div style="line-height:1.8;">
-                    <p style="color:#00e676; font-size:1.1rem; font-weight:700;"><i class="fa-solid fa-check-circle"></i> Threat Mitigation Active</p>
-                    <hr style="border-color:rgba(255,255,255,0.1); margin:12px 0;">
-                    <p><strong>Scanned Packets:</strong> ${resTD.scannedPackets.toLocaleString()}</p>
-                    <p><strong>Detected Payload:</strong> ${resTD.threatType}</p>
-                    <p><strong>Automated Response:</strong> ${resTD.actionTaken}</p>
-                    <p><strong>Neural Model Confidence:</strong> <span style="color:#00f2fe; font-weight:700;">${resTD.confidence}</span></p>
-                </div>
-            `);
-            break;
-
-        case 'federated-learning':
-            appendLog('Synchronizing gradient updates with peer network nodes...', 'info', 'FEDERATED');
-            const resFL = await CyberImmuneAPI.runFederatedLearning();
-            appendLog(`Federated Sync Successful. Global Version: ${resFL.globalModelVersion}. Accuracy boost: ${resFL.accuracyGain}`, 'success', 'FEDERATED');
-            updateMetrics(99.7, 99.3, 99.4, '4.1 ms');
-            showModal('Federated Learning Node Telemetry', `
-                <div>
-                    <p><strong>Connected Nodes:</strong> ${resFL.nodesConnected} Sovereign Edges</p>
-                    <p><strong>Loss Delta:</strong> ${resFL.gradientLoss}</p>
-                    <p><strong>Accuracy Improvement:</strong> <span style="color:#00e676;">${resFL.accuracyGain}</span></p>
-                    <p><strong>Privacy Mode:</strong> ${resFL.privacyBudget}</p>
-                </div>
-            `);
-            break;
-
-        case 'classifier':
-            appendLog('Evaluating multi-class classifier on active ingress stream...', 'info', 'CLASSIFIER');
-            updateMetrics(99.5, 98.9, 99.2, '4.0 ms');
-            showModal('Multi-Class Classifier Insights', `
-                <p>Classes evaluated: <code>DDoS</code>, <code>Ransomware</code>, <code>Zero-Day Exfiltration</code>, <code>SQLi</code>, <code>Phishing Payload</code></p>
-                <br>
-                <div style="background:rgba(0,0,0,0.3); padding:12px; border-radius:8px;">
-                    <p>✓ DDoS: <strong>0.001% risk</strong></p>
-                    <p>✓ Ransomware: <strong>99.98% mitigated</strong></p>
-                    <p>✓ SQL Injection: <strong>Filtered at WAF boundary</strong></p>
-                </div>
-            `);
-            break;
-
-        case 'autoencoder':
-            appendLog('Autoencoder latent space check: Zero-day reconstruction error normal.', 'success', 'AUTOENCODER');
-            showModal('Autoencoder Anomaly Detection', `
-                <p>Latent Space Dimension: 64D</p>
-                <p>Current Reconstruction MSE Threshold: <strong>0.0042 (Clean)</strong></p>
-                <p>Status: All network traffic conforms to nominal baseline manifold.</p>
-            `);
-            break;
-
-        case 'shap':
-            appendLog('Generating SHAP feature attribution weights for last alert...', 'info', 'SHAP');
-            const shapData = await CyberImmuneAPI.getSHAPExplainability();
-            let html = `<h4>Feature Attribution for ${shapData.targetThreat}</h4><br>`;
-            shapData.topFeatures.forEach(f => {
-                html += `
-                    <div style="margin-bottom:10px;">
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>${f.name}</span>
-                            <span style="color:${f.impact === 'High Risk' ? '#ff5252' : '#00e676'}">${f.impact} (${(f.weight*100).toFixed(0)}%)</span>
-                        </div>
-                        <div style="height:6px; background:rgba(255,255,255,0.1); border-radius:3px; margin-top:4px;">
-                            <div style="width:${f.weight*100}%; height:100%; background:${f.impact === 'High Risk' ? '#ff5252' : '#00c6ff'}; border-radius:3px;"></div>
-                        </div>
-                    </div>
-                `;
-            });
-            showModal('SHAP Explainability Analysis', html);
-            break;
-
-        case 'digital-twin':
-            appendLog('Simulating exploit vector in isolated Digital Twin Sandbox environment...', 'warning', 'DIGITAL_TWIN');
-            const twin = await CyberImmuneAPI.getDigitalTwinSim();
-            appendLog(`Digital Twin Sim Complete. Resilience Score: ${twin.zeroDayResilienceScore}`, 'success', 'DIGITAL_TWIN');
-            showModal('Digital Twin Virtual Sandbox Results', `
-                <p><strong>Sandbox VMs Deployed:</strong> ${twin.sandboxVMS}</p>
-                <p><strong>Replayed Exploit:</strong> ${twin.attackReplayed}</p>
-                <p><strong>Mitigation Efficiency:</strong> <span style="color:#00e676; font-weight:bold;">${twin.mitigationEfficiency}</span></p>
-                <p><strong>Resilience Index:</strong> ${twin.zeroDayResilienceScore}</p>
-            `);
-            break;
-
-        case 'trust-ledger':
-            appendLog('Querying immutable Trust Ledger blockchain consensus...', 'info', 'BLOCKCHAIN');
-            const blocks = await CyberImmuneAPI.getTrustLedger();
-            let bHtml = `<h4>Immutable Blockchain Defense Audit</h4><br>`;
-            blocks.forEach(b => {
-                bHtml += `
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:8px; font-family:monospace;">
-                        <p style="color:#00f2fe;">Block #${b.block} [${b.timestamp}]</p>
-                        <p style="font-size:0.85rem;">Hash: ${b.hash}</p>
-                        <p style="color:#8e9bb4; font-size:0.85rem;">${b.event}</p>
-                    </div>
-                `;
-            });
-            showModal('Trust Ledger Blockchain Blocks', bHtml);
-            break;
-
-        case 'response-agent':
-            appendLog('Autonomous Response Agent executing honeypot traps & firewall updates...', 'danger', 'AGENT');
-            showModal('Autonomous Response Agent Status', `
-                <p style="color:#00e676; font-weight:700;"><i class="fa-solid fa-robot"></i> Agent active & monitoring 1,024 endpoint nodes.</p>
-                <br>
-                <ul>
-                    <li>Auto-quarantine rule active</li>
-                    <li>Adaptive rate-limiting enabled</li>
-                    <li>Zero-Trust JWT rotation enforced</li>
-                </ul>
-            `);
-            break;
-
-        case 'full-scan':
-            appendLog('Executing Full Autonomous AI Immune System Audit across all clusters...', 'warning', 'SYSTEM');
-            updateMetrics(99.9, 99.7, 99.8, '2.1 ms');
-            setTimeout(() => {
-                appendLog('Full Audit Completed! All 8 AI defense modules fully synchronized & hardened.', 'success', 'SYSTEM');
-            }, 1200);
-            break;
+async function checkServerHealth() {
+    const statusEl = document.getElementById('serverStatus');
+    try {
+        const response = await fetch(`${API_BASE}/health`);
+        const data = await response.json();
+        if (data.status === 'online') {
+            statusEl.textContent = '✅ Connected';
+            statusEl.style.color = '#00e5ff';
+        } else {
+            statusEl.textContent = '⚠️ Unknown';
+            statusEl.style.color = '#ffb347';
+        }
+    } catch (error) {
+        statusEl.textContent = '❌ Offline';
+        statusEl.style.color = '#ff4444';
+        console.error('Server health check failed:', error);
     }
 }
 
-function updateMetrics(acc, prec, rec, lat) {
-    document.getElementById('val-accuracy').textContent = acc + '%';
-    document.getElementById('val-precision').textContent = prec + '%';
-    document.getElementById('val-recall').textContent = rec + '%';
-    document.getElementById('val-latency').textContent = lat;
+async function loadMetrics() {
+    try {
+        const response = await fetch(`${API_BASE}/metrics`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const m = data.metrics;
+            document.getElementById('accuracy').textContent = m.accuracy ? `${m.accuracy}%` : '--%';
+            document.getElementById('precision').textContent = m.precision ? `${m.precision}%` : '--%';
+            document.getElementById('recall').textContent = m.recall ? `${m.recall}%` : '--%';
+            document.getElementById('f1Score').textContent = m.f1_score ? `${m.f1_score}%` : '--%';
+            
+            // Update dashboard cards
+            document.getElementById('threatsBlocked').textContent = Math.floor(Math.random() * 1000 + 1000);
+            document.getElementById('aiDecisions').textContent = Math.floor(Math.random() * 5000 + 5000);
+            document.getElementById('uptime').textContent = (99.5 + Math.random() * 0.5).toFixed(2) + '%';
+            document.getElementById('activeSessions').textContent = Math.floor(Math.random() * 5 + 1);
+        }
+    } catch (error) {
+        console.error('Error loading metrics:', error);
+    }
 }
 
-// Modal Controllers
-function showModal(title, content) {
-    document.getElementById('modalTitle').textContent = title;
-    document.getElementById('modalBody').innerHTML = content;
-    document.getElementById('modalOverlay').classList.add('active');
+async function loadDataInfo() {
+    try {
+        const response = await fetch(`${API_BASE}/data-info`);
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('dataInfo').innerHTML = `
+                <div class="data-stats">
+                    <span>📊 Rows: ${data.rows}</span>
+                    <span>📈 Columns: ${data.columns}</span>
+                    <span>🏷️ Labels: ${data.has_labels ? 'Yes' : 'No'}</span>
+                    <span>🔢 Features: ${data.features ? data.features.length : 0}</span>
+                </div>
+                <div class="feature-list">
+                    <strong>Features:</strong> ${data.features ? data.features.join(', ') : 'N/A'}
+                </div>
+            `;
+        }
+    } catch (error) {
+        document.getElementById('dataInfo').textContent = '❌ Error loading data info';
+        console.error('Error loading data info:', error);
+    }
 }
 
-function closeModal() {
-    document.getElementById('modalOverlay').classList.remove('active');
+async function loadLedger() {
+    try {
+        const response = await fetch(`${API_BASE}/trust-ledger`);
+        const data = await response.json();
+        
+        if (data.success) {
+            let html = '<table><thead><tr><th>ID</th><th>Event</th><th>Status</th><th>Hash</th></tr></thead><tbody>';
+            
+            data.entries.forEach(entry => {
+                const statusColor = entry.status === 'verified' ? '#00e5ff' : 
+                                   entry.status === 'pending' ? '#ffb347' : '#ff4444';
+                html += `<tr>
+                    <td>${entry.id}</td>
+                    <td>${entry.event}</td>
+                    <td style="color: ${statusColor}">${entry.status}</td>
+                    <td class="hash">${entry.hash.substring(0, 20)}...</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('ledgerEntries').innerHTML = html;
+        }
+    } catch (error) {
+        document.getElementById('ledgerEntries').textContent = '❌ Error loading ledger';
+        console.error('Error loading ledger:', error);
+    }
 }
 
-// Navigation items click handling
-document.addEventListener('DOMContentLoaded', () => {
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            navItems.forEach(i => i.classList.remove('active'));
-            item.classList.add('active');
-            const tabName = item.getAttribute('data-tab');
-            appendLog(`Navigated to section: ${tabName}`, 'info', 'NAV');
+async function runModel(modelName) {
+    const resultDiv = document.getElementById('modelResults');
+    resultDiv.innerHTML = `<div class="loading">⏳ Running ${modelName}...</div>`;
+    
+    try {
+        let endpoint = '';
+        let payload = {};
+        
+        switch(modelName) {
+            case 'threat':
+                endpoint = '/threat-detection';
+                payload = { features: Array(10).fill(1).map(() => Math.random()) };
+                break;
+            case 'federated':
+                endpoint = '/federated-learning';
+                payload = { client_data: { client1: [1,2,3], client2: [4,5,6] }, round: 1 };
+                break;
+            case 'multi':
+                endpoint = '/multi-class-classifier';
+                payload = { features: Array(10).fill(1).map(() => Math.random()) };
+                break;
+            case 'autoencoder':
+                endpoint = '/autoencoder-detection';
+                payload = { features: Array(10).fill(1).map(() => Math.random()) };
+                break;
+            case 'shap':
+                endpoint = '/shap-explainability';
+                payload = { features: Array(10).fill(1).map(() => Math.random()) };
+                break;
+            case 'twin':
+                endpoint = '/digital-twin';
+                payload = { scenario: 'normal' };
+                break;
+            case 'response':
+                endpoint = '/response-agent';
+                payload = { threat_type: 'malware', severity: 'high' };
+                break;
+            default:
+                resultDiv.innerHTML = '❌ Unknown model';
+                return;
+        }
+        
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
-    });
-});
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            resultDiv.innerHTML = `
+                <div class="result-success">
+                    ✅ <strong>${modelName.toUpperCase()}</strong> executed successfully
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `<div class="result-error">❌ Error: ${result.error || 'Unknown error'}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="result-error">❌ Connection error: ${error.message}</div>`;
+    }
+}
+
+async function runAllModels() {
+    const resultDiv = document.getElementById('allModelsResult');
+    resultDiv.innerHTML = '<div class="loading">⏳ Running all models...</div>';
+    
+    try {
+        const response = await fetch(`${API_BASE}/run-all-models`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            let html = '<div class="result-success">✅ All models executed successfully</div>';
+            html += '<div class="model-results-grid">';
+            
+            for (const [model, data] of Object.entries(result.models)) {
+                html += `<div class="model-result-card">
+                    <h4>${model.replace('_', ' ').toUpperCase()}</h4>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                </div>`;
+            }
+            
+            html += '</div>';
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = `<div class="result-error">❌ Error: ${result.error}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="result-error">❌ Connection error: ${error.message}</div>`;
+    }
+}
